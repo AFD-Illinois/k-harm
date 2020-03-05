@@ -127,8 +127,13 @@ void polar_x2(const Grid& G, GridVars P, GridInt pflag)
     );
 }
 
-void user_x1(const Grid& G, const EOS* eos, GridVars P, GridInt pflag) {
+void user_x1(const Grid& G, GridVars P, const EOS* eos, GridInt pflag) {
     get_prim_bondi(G, P, eos, G.bound_x1_r(), 1.0, 8.0);
+    Kokkos::parallel_for("user_pflag_0", G.bound_x1_r(),
+        KOKKOS_LAMBDA_3D {
+            pflag(i, j, k) = 0;
+        }
+    );
 }
 
 void set_bounds(const Grid& G, GridVars P, GridInt pflag, const EOS* eos, Parameters params)
@@ -138,7 +143,7 @@ void set_bounds(const Grid& G, GridVars P, GridInt pflag, const EOS* eos, Parame
     //periodic_x3(G, P, pflag);
 
     outflow_x1(G, P, pflag);
-    user_x1(G, eos, P, pflag);
+    user_x1(G, P, eos, pflag);
     polar_x2(G, P, pflag);
     periodic_x3(G, P, pflag);
 }

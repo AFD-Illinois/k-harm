@@ -368,7 +368,7 @@ void get_prim_bondi(const Grid& G, Vars P, const EOS* eos, const Range range, co
             cs.coord_to_embed(X, Xembed);
             // Any zone inside the horizon gets the horizon's values
             int ii = i;
-            while (Xembed[1] < mpark::get<KSCoords>(cs.base).rhor())
+            while (Xembed[1] < mpark::get<SphKSCoords>(cs.base).rhor())
             {
                 ++ii;
                 G.coord(ii, j, k, Loci::center, X);
@@ -384,9 +384,10 @@ void get_prim_bondi(const Grid& G, Vars P, const EOS* eos, const Range range, co
 
             // Convert ur to native coordinates
             Real ucon_bl[NDIM] = {0, ur, 0, 0};
-            Real ucon_mks[NDIM], u_prim[NDIM];
+            Real ucon_ks[NDIM], ucon_mks[NDIM], u_prim[NDIM];
             // TODO if using KS etc etc.
-            mpark::get<KSCoords>(cs.base).vec_from_bl(X, ucon_bl, ucon_mks);
+            mpark::get<SphKSCoords>(cs.base).vec_from_bl(Xembed, ucon_bl, ucon_ks);
+            cs.vec_to_native(X, ucon_ks, ucon_mks);
 
             // Convert native 4-vector to primitive u-twiddle, see Gammie '04
             Real gcon[NDIM][NDIM];

@@ -33,20 +33,32 @@ int main(int argc, char *argv[])
         DefaultExecutionSpace::print_configuration(std::cerr);
         std::cerr << std::endl;
 
-        // TODO parse paraemeters and/or read restart here
+        // TODO these should of course all be parameters and read from file
         Parameters params;
         params.insert(std::make_pair("verbose", 0));
         int side = 128;
-        auto sz = {side, side, side};
+        std::vector<int> sz = {side, side, side};
         int ng = 3;
         int nvar = 8;
         double gam = 5./3;
         double a = 0.0;
-        auto start = {1.9, 0.0, 0.0};
-        auto stop = {20.0, M_PI, 2*M_PI};
+        double Rout = 100.0;
         double tend = 10.0;
         double dump_cadence = 0.5;
-        bool dump_every_step = false;
+        bool dump_every_step = true;
+
+        // Define the base/embedding coordinate system Kerr-Schild
+        SomeBaseCoords base_coords = SphKSCoords(a);
+        // TODO wall this on being spherical, put more in coords
+        GReal Rhor = mpark::get<SphKSCoords>(base_coords).rhor();
+        GReal Rin = exp((sz[0] * log(Rhor) / 5.5 - log(Rout)) / (-1. + sz[0] / 5.5));
+        std::vector<GReal> startx = {log(Rin), 0.0, 0.0};
+        std::vector<GReal> stopx = {log(Rout), 1.0, 2*M_PI};
+
+        // Define a transformation on the system
+        SomeTransform funky = FunkyTransform(startx[1], 0.3, 0.5, 0.82, 14.0);
+        //SomeTransform null = SphNullTransform();
+        CoordinateEmbedding coords = CoordinateEmbedding(base_coords, funky);
 
         // Allocate device-side objects
         EOS *eos;
@@ -58,11 +70,8 @@ int main(int argc, char *argv[])
         );
         EOS *h_eos = new GammaLaw(gam);
 
-        SomeBaseCoords base_coords = KSCoords(a);
-        CoordinateEmbedding coords = CoordinateEmbedding(base_coords);
-
         // Make the grid
-        Grid G(&coords, sz, start, stop, ng, nvar);
+        Grid G(&coords, sz, startx, stopx, ng, nvar);
         cerr << "Grid initialized" << std::endl;
 
         // Make an array of the primitive variables

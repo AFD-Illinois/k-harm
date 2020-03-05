@@ -8,28 +8,30 @@
 
 #include <string>
 
-#define MDRANGE 1
-#define RANGE   0
-#define TPX     0
-#define GRABBAG 0
-#define SIMDFOR 0
+// Poor man's compile time enum woooo
+#define MDRANGE 0
+#define RANGE   1
+#define TPX     2
+#define GRABBAG 3
+#define SIMDFOR 4
+#define FOR_LOOP_TYPE MDRANGE
 
 // TODO remember to test right&left storage, AND right&left Ranges
 
-template<typename... Properties, typename LambdaType>
-void abstract_for(std::string name, Kokkos::MDRangePolicy<Properties...> range, LambdaType fn)
+template<typename RangeType, typename LambdaType>
+inline void abstract_for(const std::string& name, RangeType range, LambdaType fn)
 {
-#if MDRANGE
+#if FOR_LOOP_TYPE == MDRANGE
     // MDRange loops
     Kokkos::parallel_for(name, range, fn);
-#else
+#else // Common stuff for grabbing traits from MDRange
     using traits = Kokkos::Impl::PolicyTraits<Properties...>;
     using execution_space = typename traits::execution_space;
     using iteration_pattern = typename traits::iteration_pattern;
     int rank = static_cast<int>(iteration_pattern::rank);
-#if RANGE
+#if FOR_LOOP_TYPE == RANGE
     // Kokkos 1D Range
-    if (rank == 3) {
+    if (iteration_pattern::rank == 3) {
         int il = range.m_lower[0]; int ih = range.m_upper[0];
         int jl = range.m_lower[1]; int jh = range.m_upper[1];
         int kl = range.m_lower[2]; int kh = range.m_upper[2];
@@ -51,7 +53,7 @@ void abstract_for(std::string name, Kokkos::MDRangePolicy<Properties...> range, 
                 fn(i,j,k);
             }
         );
-    } else if (rank == 4) {
+    } else if (iteration_pattern::rank == 4) {
         // TODO how to convince compiler rank 4 == 4-arg func?
         // int il = range.m_lower[0]; int ih = range.m_upper[0];
         // int jl = range.m_lower[1]; int jh = range.m_upper[1];
@@ -79,7 +81,7 @@ void abstract_for(std::string name, Kokkos::MDRangePolicy<Properties...> range, 
         //     }
         // );
     }
-#elif TPX
+#elif FOR_LOOP_TYPE == TPX
   // TeamPolicy loops
     const int NN = NU - NL + 1;
     const int NK = KU - KL + 1;
@@ -100,7 +102,7 @@ void abstract_for(std::string name, Kokkos::MDRangePolicy<Properties...> range, 
             function(n,k,j,i);
           });
       });
-#elif GRABBAG
+#elif FOR_LOOP_TYPE == GRABBAG
     // TeamPolicy with nested TeamThreadRange and ThreadVectorRange
     const int NN = NU - NL + 1;
     const int NK = KU - KL + 1;
@@ -120,7 +122,7 @@ void abstract_for(std::string name, Kokkos::MDRangePolicy<Properties...> range, 
               });
           });
       });
-#elif SIMDFOR
+#elif FOR_LOOP_TYPE == SIMDFOR
     // SIMD FOR loops
     Kokkos::Profiling::pushRegion(NAME);
     for (auto n = NL; n <= NU; n++)
@@ -130,6 +132,8 @@ void abstract_for(std::string name, Kokkos::MDRangePolicy<Properties...> range, 
           for (auto i = IL; i <= IU; i++)
             function(n,k,j,i);
     Kokkos::Profiling::popRegion();
+#else
+#error "No implementation for abstract for loops was specified!"
 #endif
 #endif
 }

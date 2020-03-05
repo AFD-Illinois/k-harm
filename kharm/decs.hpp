@@ -16,7 +16,10 @@
 #define VERSION "kharm-alpha-0.1"
 #define NDIM 4
 #define DLOOP1 for(int mu = 0; mu < NDIM; ++mu)
-#define DLOOP2 for(int mu = 0; mu < NDIM; ++mu) for(int nu = 0; nu < NDIM; ++nu)
+#define DLOOP2 DLOOP1 for(int nu = 0; nu < NDIM; ++nu)
+#define DLOOP3 DLOOP2 for(int lam = 0; lam < NDIM; ++lam)
+#define DLOOP4 DLOOP3 for(int kap = 0; kap < NDIM; ++kap)
+
 // There may be more than 8 variables, so don't use these
 // unless you *only* want the primitives
 #define NPRIM 8

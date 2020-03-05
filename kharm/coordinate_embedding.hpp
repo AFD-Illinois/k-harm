@@ -18,6 +18,12 @@
  * This class keeps track of the base coordinates and the map, which must be classes which are members of the SomeXX std::variant containers.
  * The BaseCoords class must implement:
  * * gcov_embed
+ * The Transform class must implement:
+ * * coord_to_embed
+ * * coord_to_native
+ * * dxdX_to_embed
+ * * dxdX_to_native
+ * 
  */
 class CoordinateEmbedding {
     public:
@@ -28,9 +34,9 @@ class CoordinateEmbedding {
         // Alternate versions if some types have default constructors
         CoordinateEmbedding(SomeBaseCoords& base_in): base(base_in)
         {
-            // TODO detect this based on base type
-            // TODO eliminate code when the transform is null anyway?
-            transform = NullSphTransform();
+            // TODO detect Sph/Cart based on base type
+            // TODO eliminate these calls when the transform is null?  Maybe useful for kipole
+            transform = SphNullTransform();
         }
 
         // Spell out the interface we take from BaseCoords
@@ -40,44 +46,96 @@ class CoordinateEmbedding {
                 self.gcov_embed(Xembed, gcov);
             }, base);
         }
-        // and Transforms
+        // and from the Transform
         KOKKOS_INLINE_FUNCTION void coord_to_embed(const GReal Xnative[NDIM], GReal Xembed[NDIM]) const
         {
             mpark::visit( [&Xnative, &Xembed](const auto& self) {
                 self.coord_to_embed(Xnative, Xembed);
             }, transform);
         }
-        KOKKOS_INLINE_FUNCTION void dxdX_to_native(const GReal X[NDIM], Real dxdX[NDIM][NDIM]) const
+        KOKKOS_INLINE_FUNCTION void coord_to_native(const GReal Xembed[NDIM], GReal Xnative[NDIM]) const
         {
-            mpark::visit( [&X, &dxdX](const auto& self) {
-                self.dxdX_to_native(X, dxdX);
+            mpark::visit( [&Xnative, &Xembed](const auto& self) {
+                self.coord_to_native(Xembed, Xnative);
+            }, transform);
+        }
+        KOKKOS_INLINE_FUNCTION void dxdX_to_embed(const GReal Xnative[NDIM], Real dxdX[NDIM][NDIM]) const
+        {
+            mpark::visit( [&Xnative, &dxdX](const auto& self) {
+                self.dxdX_to_embed(Xnative, dxdX);
+            }, transform);
+        }
+        KOKKOS_INLINE_FUNCTION void dxdX_to_native(const GReal Xnative[NDIM], Real dxdX[NDIM][NDIM]) const
+        {
+            mpark::visit( [&Xnative, &dxdX](const auto& self) {
+                self.dxdX_to_native(Xnative, dxdX);
             }, transform);
         }
 
-        // Metric properties
-        KOKKOS_INLINE_FUNCTION void gcov_native(const GReal X[NDIM], Real gcov[NDIM][NDIM]) const
+        // Then define the usual things we use dxdX *for*, to avoid lots of needless for loops
+        KOKKOS_INLINE_FUNCTION void vec_to_embed(const GReal Xnative[NDIM], const GReal vnative[NDIM], GReal vembed[NDIM]) const
         {
-            Real gcov_em[NDIM][NDIM], dxdX[NDIM][NDIM];
+            Real dxdX[NDIM][NDIM];
+            dxdX_to_embed(Xnative, dxdX);
+            DLOOP1 {
+                vembed[mu] = 0;
+                for(int nu=0; nu < NDIM; ++nu)
+                    vembed[mu] += dxdX[mu][nu] * vnative[nu];
+            }
+        }
+        // TODO rethink this interface?
+        KOKKOS_INLINE_FUNCTION void vec_to_native(const GReal Xnative[NDIM], const GReal vembed[NDIM], GReal vnative[NDIM]) const
+        {
+            Real dxdX[NDIM][NDIM];
+            dxdX_to_native(Xnative, dxdX);
+            DLOOP1 {
+                vnative[mu] = 0;
+                for(int nu=0; nu < NDIM; ++nu)
+                    vnative[mu] += dxdX[mu][nu] * vembed[nu];
+            }
+        }
+        KOKKOS_INLINE_FUNCTION void tensor_to_embed(const GReal Xnative[NDIM], const GReal tnative[NDIM][NDIM], GReal tembed[NDIM][NDIM]) const
+        {
+            Real dxdX[NDIM][NDIM];
+            dxdX_to_embed(Xnative, dxdX);
 
-            GReal Xembed[NDIM];
-            coord_to_embed(X, Xembed);
-
-            // Get the embedding system's metric
-            gcov_embed(Xembed, gcov_em);
-
-            // Apply coordinate transformation to code coordinates X
-            dxdX_to_native(X, dxdX);
-
-            for (int mu = 0; mu < NDIM; mu++) {
-                for (int nu = 0; nu < NDIM; nu++) {
-                    gcov[mu][nu] = 0;
-                    for (int lam = 0; lam < NDIM; lam++) {
-                        for (int kap = 0; kap < NDIM; kap++) {
-                            gcov[mu][nu] += gcov_em[lam][kap]*dxdX[lam][mu]*dxdX[kap][nu];
-                        }
+            DLOOP2 {
+                tembed[mu][nu] = 0;
+                for (int lam = 0; lam < NDIM; lam++) {
+                    for (int kap = 0; kap < NDIM; kap++) {
+                        tembed[mu][nu] += tnative[lam][kap]*dxdX[lam][mu]*dxdX[kap][nu];
                     }
                 }
             }
+        }
+        KOKKOS_INLINE_FUNCTION void tensor_to_native(const GReal Xnative[NDIM], const GReal tembed[NDIM][NDIM], GReal tnative[NDIM][NDIM]) const
+        {
+            Real dxdX[NDIM][NDIM];
+            dxdX_to_native(Xnative, dxdX);
+
+            DLOOP2 {
+                tnative[mu][nu] = 0;
+                for (int lam = 0; lam < NDIM; lam++) {
+                    for (int kap = 0; kap < NDIM; kap++) {
+                        tnative[mu][nu] += tembed[lam][kap]*dxdX[lam][mu]*dxdX[kap][nu];
+                    }
+                }
+            }
+        }
+
+        // And then some metric properties
+        KOKKOS_INLINE_FUNCTION void gcov_native(const GReal Xnative[NDIM], Real gcov[NDIM][NDIM]) const
+        {
+            Real gcov_em[NDIM][NDIM];
+            GReal Xembed[NDIM];
+            // Get coordinates in embedding system
+            coord_to_embed(Xnative, Xembed);
+
+            // Get metric in embedding coordinates
+            gcov_embed(Xembed, gcov_em);
+
+            // Transform to native coordinates
+            tensor_to_native(Xnative, gcov_em, gcov);
         }
         KOKKOS_INLINE_FUNCTION void gcon_native(const GReal X[NDIM], Real gcon[NDIM][NDIM]) const
         {
